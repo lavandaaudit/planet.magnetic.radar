@@ -2,126 +2,158 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<title>IBONARIUM · MAGNETOSPHERE ADVANCED</title>
+<title>planet.magnetic.radar</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
-html,body{margin:0;background:#000;color:#cfefff;font-family:Inter,monospace;}
-canvas{display:block;}
-#ui{position:fixed;left:10px;top:10px;background:rgba(0,0,0,.65);padding:12px;z-index:10;}
-.alert{color:#ff4444;}
-.warn{color:#ffaa00;}
-.ok{color:#44ff88;}
-.station{color:#44ffff;font-size:12px;}
+html,body{
+    margin:0;
+    background:#000;
+    color:#bfe9ff;
+    font-family: Inter, system-ui, monospace;
+    overflow:hidden;
+}
+#hud{
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:10;
+    background:rgba(0,0,0,0.5);
+    padding:10px;
+    border:1px solid #1b4b66;
+    font-size:13px;
+}
+canvas{display:block}
 </style>
 </head>
+
 <body>
-<div id="ui">
-  <div id="indices"></div>
-  <div id="spectrum"></div>
+
+<div id="hud">
+🧭 INTERMAGNET<br>
+🧮 Stability spectrum<br>
+🌀 Substorms
 </div>
+
 <canvas id="c"></canvas>
+
 <script>
-const c=document.getElementById("c")
-const ctx=c.getContext("2d")
-resize()
-window.onresize=resize
-function resize(){c.width=innerWidth;c.height=innerHeight}
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
 
-let Dst=0, AE=0, AL=0, AU=0
-let stations=[]
-async function loadData(){
-  Dst = (await fetch("data/dst.json")).then(r=>r.json()).then(d=>d.value)
-  const ae = await fetch("data/ae.json").then(r=>r.json())
-  AE = ae.AE; AL=ae.AL; AU=ae.AU
-  stations = await fetch("data/stations.json").then(r=>r.json())
+function resize(){
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+}
+resize();
+addEventListener("resize", resize);
+
+/* ---------------- DATA LOADING ---------------- */
+
+function loadData(){
+    return Promise.all([
+        fetch("data/ae.json").then(r=>r.json()),
+        fetch("data/dst.json").then(r=>r.json()),
+        fetch("data/stations.json").then(r=>r.json())
+    ]);
 }
 
-/* 3x3 матриця стану */
-function eigen3x3(x){
-  // просто приближення: беремо підматриці 2x2
-  const a=x[0], b=x[1], c=x[2]
-  return [1+a*0.01, 1+b*0.01, 1+c*0.01]
-}
-function stabilitySpectrum(){
-  const eig = eigen3x3([Dst, AE, AL-AU])
-  const maxλ=Math.max(...eig.map(v=>Math.abs(v)))
-  if(maxλ<1) return {state:"STABLE",cls:"ok"}
-  if(maxλ<1.1) return {state:"META-STABLE",cls:"warn"}
-  if(maxλ<1.3) return {state:"TURBULENT",cls:"warn"}
-  return {state:"CHAOTIC",cls:"alert"}
-}
+loadData()
+.then(([ae, dst, stations])=>{
+    console.log("AE", ae);
+    console.log("DST", dst);
+    console.log("STATIONS", stations);
+    startRadar(ae, dst, stations);
+})
+.catch(e=>console.error("LOAD ERROR", e));
 
-/* проєкція координат */
-function project(lat,lon){
-  return {x:(lon+180)/360*c.width, y:(90-lat)/180*c.height}
-}
+/* ---------------- CORE ---------------- */
 
-function drawEarthGrid(){
-  ctx.strokeStyle="rgba(255,255,255,.08)"
-  for(let lat=-60;lat<=60;lat+=30){
-    ctx.beginPath()
-    for(let lon=-180;lon<=180;lon+=5){
-      const p=project(lat,lon)
-      ctx.lineTo(p.x,p.y)
+function startRadar(ae, dst, stations){
+
+    let t = 0;
+
+    function drawEarth(){
+        const r = Math.min(canvas.width, canvas.height)*0.32;
+        const cx = canvas.width/2;
+        const cy = canvas.height/2;
+
+        ctx.strokeStyle="#1b4b66";
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.arc(cx,cy,r,0,Math.PI*2);
+        ctx.stroke();
+
+        // latitude lines
+        for(let i=-60;i<=60;i+=30){
+            ctx.beginPath();
+            ctx.ellipse(cx,cy+r*Math.sin(i*Math.PI/180),r, r*Math.cos(i*Math.PI/180),0,0,Math.PI*2);
+            ctx.stroke();
+        }
     }
-    ctx.stroke()
-  }
-  for(let lon=-180;lon<=180;lon+=30){
-    ctx.beginPath()
-    for(let lat=-90;lat<=90;lat+=5){
-      const p=project(lat,lon)
-      ctx.lineTo(p.x,p.y)
+
+    function project(lat, lon){
+        const r = Math.min(canvas.width, canvas.height)*0.32;
+        const cx = canvas.width/2;
+        const cy = canvas.height/2;
+        return {
+            x: cx + r * Math.cos(lat*Math.PI/180) * Math.sin(lon*Math.PI/180),
+            y: cy - r * Math.sin(lat*Math.PI/180)
+        }
     }
-    ctx.stroke()
-  }
+
+    function drawStations(){
+        ctx.fillStyle="#00ffff";
+        ctx.font="11px monospace";
+        stations.forEach(s=>{
+            const p = project(s.lat, s.lon);
+            ctx.beginPath();
+            ctx.arc(p.x,p.y,2,0,Math.PI*2);
+            ctx.fill();
+            ctx.fillText(s.code, p.x+4, p.y-4);
+        });
+    }
+
+    function drawVortices(){
+        const cx = canvas.width/2;
+        const cy = canvas.height/2;
+        ae.slice(-6).forEach((v,i)=>{
+            const a = t*0.002 + i;
+            const r = 120 + v.value*0.1;
+            ctx.strokeStyle="rgba(255,0,150,0.4)";
+            ctx.beginPath();
+            ctx.arc(cx+Math.cos(a)*r, cy+Math.sin(a)*r, 20+v.value*0.02, 0, Math.PI*2);
+            ctx.stroke();
+        });
+    }
+
+    function stabilitySpectrum(){
+        const M = [
+            [1, ae.at(-1)?.value||0, 0],
+            [0, 1, dst.at(-1)?.value||0],
+            [0, 0, 1]
+        ];
+
+        const trace = M[0][0]+M[1][1]+M[2][2];
+        const energy = Math.sqrt(M[0][1]*M[0][1]+M[1][2]*M[1][2]);
+
+        ctx.fillStyle="#9ff";
+        ctx.fillText("trace: "+trace.toFixed(2), 10, canvas.height-40);
+        ctx.fillText("energy: "+energy.toFixed(2), 10, canvas.height-25);
+    }
+
+    function loop(){
+        t++;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        drawEarth();
+        drawStations();
+        drawVortices();
+        stabilitySpectrum();
+        requestAnimationFrame(loop);
+    }
+    loop();
 }
-
-/* магнітне поле + саббурі */
-function drawMagneticField(){
-  const intensity=Math.min(1,Math.abs(Dst)/100)
-  // саббурі
-  stations.forEach(st=>{
-    const p=project(st.lat,st.lon)
-    const r=10+intensity*20
-    ctx.strokeStyle=`rgba(0,255,200,0.7)`
-    ctx.beginPath()
-    ctx.arc(p.x,p.y,r,0,Math.PI*2)
-    ctx.stroke()
-    ctx.fillStyle="#44ffff"
-    ctx.fillText(st.name,p.x+5,p.y-5)
-  })
-  // глобальне поле
-  for(let i=0;i<400;i++){
-    const lat=Math.random()*180-90
-    const lon=Math.random()*360-180
-    const p=project(lat,lon)
-    const vx=(AU-AL)*0.002
-    const vy=Dst*0.002
-    ctx.strokeStyle=`rgba(0,200,255,${0.2+intensity})`
-    ctx.beginPath()
-    ctx.moveTo(p.x,p.y)
-    ctx.lineTo(p.x+vx,p.y+vy)
-    ctx.stroke()
-  }
-}
-
-function draw(){
-  ctx.fillStyle="#000"
-  ctx.fillRect(0,0,c.width,c.height)
-
-  drawEarthGrid()
-  drawMagneticField()
-
-  const s = stabilitySpectrum()
-  document.getElementById("indices").innerHTML =
-    `Dst: ${Dst} nT<br>AE: ${AE} | AL: ${AL} | AU: ${AU}`
-  document.getElementById("spectrum").innerHTML =
-    `STATE: <span class="${s.cls}">${s.state}</span>`
-
-  requestAnimationFrame(draw)
-}
-
-loadData().then(draw)
 </script>
+
 </body>
 </html>
