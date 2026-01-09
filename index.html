@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>IBONARIUM · MAGNETOSPHERE ADVANCED</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{margin:0;background:#000;color:#cfefff;font-family:Inter,monospace;}
+canvas{display:block;}
+#ui{position:fixed;left:10px;top:10px;background:rgba(0,0,0,.65);padding:12px;z-index:10;}
+.alert{color:#ff4444;}
+.warn{color:#ffaa00;}
+.ok{color:#44ff88;}
+.station{color:#44ffff;font-size:12px;}
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="indices"></div>
+  <div id="spectrum"></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+const c=document.getElementById("c")
+const ctx=c.getContext("2d")
+resize()
+window.onresize=resize
+function resize(){c.width=innerWidth;c.height=innerHeight}
+
+let Dst=0, AE=0, AL=0, AU=0
+let stations=[]
+async function loadData(){
+  Dst = (await fetch("data/dst.json")).then(r=>r.json()).then(d=>d.value)
+  const ae = await fetch("data/ae.json").then(r=>r.json())
+  AE = ae.AE; AL=ae.AL; AU=ae.AU
+  stations = await fetch("data/stations.json").then(r=>r.json())
+}
+
+/* 3x3 матриця стану */
+function eigen3x3(x){
+  // просто приближення: беремо підматриці 2x2
+  const a=x[0], b=x[1], c=x[2]
+  return [1+a*0.01, 1+b*0.01, 1+c*0.01]
+}
+function stabilitySpectrum(){
+  const eig = eigen3x3([Dst, AE, AL-AU])
+  const maxλ=Math.max(...eig.map(v=>Math.abs(v)))
+  if(maxλ<1) return {state:"STABLE",cls:"ok"}
+  if(maxλ<1.1) return {state:"META-STABLE",cls:"warn"}
+  if(maxλ<1.3) return {state:"TURBULENT",cls:"warn"}
+  return {state:"CHAOTIC",cls:"alert"}
+}
+
+/* проєкція координат */
+function project(lat,lon){
+  return {x:(lon+180)/360*c.width, y:(90-lat)/180*c.height}
+}
+
+function drawEarthGrid(){
+  ctx.strokeStyle="rgba(255,255,255,.08)"
+  for(let lat=-60;lat<=60;lat+=30){
+    ctx.beginPath()
+    for(let lon=-180;lon<=180;lon+=5){
+      const p=project(lat,lon)
+      ctx.lineTo(p.x,p.y)
+    }
+    ctx.stroke()
+  }
+  for(let lon=-180;lon<=180;lon+=30){
+    ctx.beginPath()
+    for(let lat=-90;lat<=90;lat+=5){
+      const p=project(lat,lon)
+      ctx.lineTo(p.x,p.y)
+    }
+    ctx.stroke()
+  }
+}
+
+/* магнітне поле + саббурі */
+function drawMagneticField(){
+  const intensity=Math.min(1,Math.abs(Dst)/100)
+  // саббурі
+  stations.forEach(st=>{
+    const p=project(st.lat,st.lon)
+    const r=10+intensity*20
+    ctx.strokeStyle=`rgba(0,255,200,0.7)`
+    ctx.beginPath()
+    ctx.arc(p.x,p.y,r,0,Math.PI*2)
+    ctx.stroke()
+    ctx.fillStyle="#44ffff"
+    ctx.fillText(st.name,p.x+5,p.y-5)
+  })
+  // глобальне поле
+  for(let i=0;i<400;i++){
+    const lat=Math.random()*180-90
+    const lon=Math.random()*360-180
+    const p=project(lat,lon)
+    const vx=(AU-AL)*0.002
+    const vy=Dst*0.002
+    ctx.strokeStyle=`rgba(0,200,255,${0.2+intensity})`
+    ctx.beginPath()
+    ctx.moveTo(p.x,p.y)
+    ctx.lineTo(p.x+vx,p.y+vy)
+    ctx.stroke()
+  }
+}
+
+function draw(){
+  ctx.fillStyle="#000"
+  ctx.fillRect(0,0,c.width,c.height)
+
+  drawEarthGrid()
+  drawMagneticField()
+
+  const s = stabilitySpectrum()
+  document.getElementById("indices").innerHTML =
+    `Dst: ${Dst} nT<br>AE: ${AE} | AL: ${AL} | AU: ${AU}`
+  document.getElementById("spectrum").innerHTML =
+    `STATE: <span class="${s.cls}">${s.state}</span>`
+
+  requestAnimationFrame(draw)
+}
+
+loadData().then(draw)
+</script>
+</body>
+</html>
