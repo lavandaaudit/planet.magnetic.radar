@@ -1,0 +1,27 @@
+name: Magnetosphere Data Update
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # раз на годину
+  workflow_dispatch:       # дає можливість запускати вручну
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Fetch AE/DST data
+        run: |
+          curl -s https://example.com/ae.json -o data/ae.json
+          curl -s https://example.com/dst.json -o data/dst.json
+          # можеш додати stations.json, якщо потрібен
+
+      - name: Commit & push updated data
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/*.json
+          git commit -m "Update magnetosphere data [ci skip]" || echo "No changes"
+          git push
