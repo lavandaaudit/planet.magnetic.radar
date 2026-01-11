@@ -1,21 +1,88 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<title>MAGNETOSPHERE · DIAGNOSTIC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html,body{
+  margin:0;
+  background:#000;
+  color:#0ff;
+  font-family:monospace;
+}
+#log{
+  position:fixed;
+  top:0;
+  left:0;
+  padding:10px;
+  background:rgba(0,0,0,.8);
+  z-index:10;
+  font-size:12px;
+  max-width:100%;
+  white-space:pre-wrap;
+}
+canvas{
+  display:block;
+}
+</style>
+</head>
+<body>
+
+<div id="log">BOOT…</div>
+<canvas id="c"></canvas>
+
 <script>
+const log = m=>{
+  document.getElementById("log").textContent += "\n"+m;
+};
+
+log("JS OK");
+
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
+
+function resize(){
+  c.width = innerWidth;
+  c.height = innerHeight;
+}
+resize();
+addEventListener("resize",resize);
+
+ctx.fillStyle="#0ff";
+ctx.beginPath();
+ctx.arc(c.width/2,c.height/2,80,0,Math.PI*2);
+ctx.fill();
+log("CANVAS OK");
+
+// ===== DATA LOAD =====
 fetch("./data/dst.json")
-  .then(r => {
-    if(!r.ok) throw "HTTP "+r.status;
-    return r.json();
-  })
-  .then(d => {
-    console.log("DST DATA:", d);
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      "<pre>"+JSON.stringify(d,null,2)+"</pre>"
-    );
-  })
-  .catch(e=>{
-    console.error("LOAD ERROR",e);
-    document.body.insertAdjacentHTML(
-      "beforeend",
-      "<h2 style='color:red'>LOAD ERROR</h2>"
-    );
-  });
+.then(r=>{
+  log("FETCH STATUS "+r.status);
+  if(!r.ok) throw "HTTP "+r.status;
+  return r.json();
+})
+.then(d=>{
+  log("JSON OK");
+  log(JSON.stringify(d,null,2));
+
+  // visualize dst
+  ctx.clearRect(0,0,c.width,c.height);
+  const dst = d.dst ?? -20;
+  const radius = Math.max(20,Math.abs(dst)*2);
+
+  ctx.strokeStyle="red";
+  ctx.lineWidth=4;
+  ctx.beginPath();
+  ctx.arc(c.width/2,c.height/2,radius,0,Math.PI*2);
+  ctx.stroke();
+
+})
+.catch(e=>{
+  log("LOAD ERROR");
+  log(String(e));
+});
 </script>
+
+</body>
+</html>
