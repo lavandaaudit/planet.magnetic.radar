@@ -2,158 +2,136 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<title>planet.magnetic.radar</title>
+<title>MAGNETOSPHERE · STABILITY RADAR</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <style>
 html,body{
-    margin:0;
-    background:#000;
-    color:#bfe9ff;
-    font-family: Inter, system-ui, monospace;
-    overflow:hidden;
-}
-#hud{
-    position:fixed;
-    top:10px;
-    left:10px;
-    z-index:10;
-    background:rgba(0,0,0,0.5);
-    padding:10px;
-    border:1px solid #1b4b66;
-    font-size:13px;
+  margin:0;
+  background:#000;
+  color:#8fd3ff;
+  font-family:Inter,system-ui,monospace;
 }
 canvas{display:block}
+#panel{
+  position:fixed;
+  left:10px; top:10px;
+  background:rgba(0,0,0,.6);
+  padding:12px;
+  border:1px solid #1c3f55;
+}
+.alert{
+  color:#ff5c5c;
+  font-weight:bold;
+}
 </style>
 </head>
-
 <body>
 
-<div id="hud">
-🧭 INTERMAGNET<br>
-🧮 Stability spectrum<br>
-🌀 Substorms
-</div>
-
 <canvas id="c"></canvas>
+
+<div id="panel">
+  <div>Dst: <span id="dst">–</span></div>
+  <div>AE: <span id="ae">–</span></div>
+  <div>Kp: <span id="kp">–</span></div>
+  <div id="state">state: loading</div>
+</div>
 
 <script>
 const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
-
-function resize(){
-    canvas.width = innerWidth;
-    canvas.height = innerHeight;
-}
 resize();
-addEventListener("resize", resize);
+window.onresize = resize;
 
-/* ---------------- DATA LOADING ---------------- */
+let data = {};
 
-function loadData(){
-    return Promise.all([
-        fetch("data/ae.json").then(r=>r.json()),
-        fetch("data/dst.json").then(r=>r.json()),
-        fetch("data/stations.json").then(r=>r.json())
-    ]);
+async function loadJSON(){
+  const files = ["dst","ae","kp","stations"];
+  for(const f of files){
+    data[f] = await fetch(`data/${f}.json`).then(r=>r.json());
+  }
+}
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
 }
 
-loadData()
-.then(([ae, dst, stations])=>{
-    console.log("AE", ae);
-    console.log("DST", dst);
-    console.log("STATIONS", stations);
-    startRadar(ae, dst, stations);
-})
-.catch(e=>console.error("LOAD ERROR", e));
-
-/* ---------------- CORE ---------------- */
-
-function startRadar(ae, dst, stations){
-
-    let t = 0;
-
-    function drawEarth(){
-        const r = Math.min(canvas.width, canvas.height)*0.32;
-        const cx = canvas.width/2;
-        const cy = canvas.height/2;
-
-        ctx.strokeStyle="#1b4b66";
-        ctx.lineWidth=2;
-        ctx.beginPath();
-        ctx.arc(cx,cy,r,0,Math.PI*2);
-        ctx.stroke();
-
-        // latitude lines
-        for(let i=-60;i<=60;i+=30){
-            ctx.beginPath();
-            ctx.ellipse(cx,cy+r*Math.sin(i*Math.PI/180),r, r*Math.cos(i*Math.PI/180),0,0,Math.PI*2);
-            ctx.stroke();
-        }
-    }
-
-    function project(lat, lon){
-        const r = Math.min(canvas.width, canvas.height)*0.32;
-        const cx = canvas.width/2;
-        const cy = canvas.height/2;
-        return {
-            x: cx + r * Math.cos(lat*Math.PI/180) * Math.sin(lon*Math.PI/180),
-            y: cy - r * Math.sin(lat*Math.PI/180)
-        }
-    }
-
-    function drawStations(){
-        ctx.fillStyle="#00ffff";
-        ctx.font="11px monospace";
-        stations.forEach(s=>{
-            const p = project(s.lat, s.lon);
-            ctx.beginPath();
-            ctx.arc(p.x,p.y,2,0,Math.PI*2);
-            ctx.fill();
-            ctx.fillText(s.code, p.x+4, p.y-4);
-        });
-    }
-
-    function drawVortices(){
-        const cx = canvas.width/2;
-        const cy = canvas.height/2;
-        ae.slice(-6).forEach((v,i)=>{
-            const a = t*0.002 + i;
-            const r = 120 + v.value*0.1;
-            ctx.strokeStyle="rgba(255,0,150,0.4)";
-            ctx.beginPath();
-            ctx.arc(cx+Math.cos(a)*r, cy+Math.sin(a)*r, 20+v.value*0.02, 0, Math.PI*2);
-            ctx.stroke();
-        });
-    }
-
-    function stabilitySpectrum(){
-        const M = [
-            [1, ae.at(-1)?.value||0, 0],
-            [0, 1, dst.at(-1)?.value||0],
-            [0, 0, 1]
-        ];
-
-        const trace = M[0][0]+M[1][1]+M[2][2];
-        const energy = Math.sqrt(M[0][1]*M[0][1]+M[1][2]*M[1][2]);
-
-        ctx.fillStyle="#9ff";
-        ctx.fillText("trace: "+trace.toFixed(2), 10, canvas.height-40);
-        ctx.fillText("energy: "+energy.toFixed(2), 10, canvas.height-25);
-    }
-
-    function loop(){
-        t++;
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        drawEarth();
-        drawStations();
-        drawVortices();
-        stabilitySpectrum();
-        requestAnimationFrame(loop);
-    }
-    loop();
+function drawEarth(){
+  const r = Math.min(canvas.width,canvas.height)*0.25;
+  ctx.strokeStyle="#1f6b8a";
+  ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.arc(canvas.width/2,canvas.height/2,r,0,Math.PI*2);
+  ctx.stroke();
 }
+
+function drawStations(){
+  const r = Math.min(canvas.width,canvas.height)*0.25;
+  data.stations.forEach(s=>{
+    const x = canvas.width/2 + r*Math.cos(s.lon*Math.PI/180);
+    const y = canvas.height/2 - r*Math.sin(s.lat*Math.PI/180);
+    ctx.fillStyle="#4fc3ff";
+    ctx.beginPath();
+    ctx.arc(x,y,2,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
+let t=0;
+function drawSubstorms(level){
+  const cx=canvas.width/2, cy=canvas.height/2;
+  for(let i=0;i<6;i++){
+    ctx.strokeStyle=`rgba(255,80,80,${level})`;
+    ctx.beginPath();
+    for(let a=0;a<Math.PI*2;a+=0.2){
+      const r=120+20*Math.sin(a*3+t+i);
+      ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));
+    }
+    ctx.stroke();
+  }
+}
+
+function stabilityMatrix(dst,ae,kp){
+  return [
+    [1, kp/9, ae/2000],
+    [kp/9, 1, dst/-300],
+    [ae/2000, dst/-300, 1]
+  ];
+}
+
+function spectrum(m){
+  return m.flat().reduce((a,b)=>a+Math.abs(b),0)/9;
+}
+
+function render(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  drawEarth();
+  drawStations();
+
+  const dst = data.dst.value;
+  const ae  = data.ae.value;
+  const kp  = data.kp.value;
+
+  document.getElementById("dst").textContent = dst;
+  document.getElementById("ae").textContent  = ae;
+  document.getElementById("kp").textContent  = kp;
+
+  const M = stabilityMatrix(dst,ae,kp);
+  const S = spectrum(M);
+
+  drawSubstorms(Math.min(1,S/2));
+
+  const state = document.getElementById("state");
+  if(S>1.2){
+    state.innerHTML = "<span class='alert'>UNSTABLE</span>";
+  } else {
+    state.textContent = "stable";
+  }
+
+  t+=0.01;
+  requestAnimationFrame(render);
+}
+
+loadJSON().then(render);
 </script>
-
 </body>
 </html>
