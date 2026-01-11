@@ -1,3 +1,1 @@
-{
-  "dst": -42
-}
+const dst = d.dst ?? d.value ?? -20;
