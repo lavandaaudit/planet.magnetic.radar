@@ -2,86 +2,148 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<title>MAGNETOSPHERE · DIAGNOSTIC</title>
+<title>IBONARIUM · MAGNETOSPHERE STABILITY</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 html,body{
   margin:0;
   background:#000;
-  color:#0ff;
+  color:#9ff;
   font-family:monospace;
+  overflow:hidden;
 }
-#log{
+#hud{
   position:fixed;
-  top:0;
-  left:0;
+  top:10px;
+  left:10px;
+  background:rgba(0,0,0,.7);
   padding:10px;
-  background:rgba(0,0,0,.8);
-  z-index:10;
+  border:1px solid #0ff;
   font-size:12px;
-  max-width:100%;
-  white-space:pre-wrap;
+  z-index:10;
 }
-canvas{
-  display:block;
-}
+canvas{display:block}
+.alert-green{color:#0f0}
+.alert-yellow{color:#ff0}
+.alert-red{color:#f00}
 </style>
 </head>
 <body>
 
-<div id="log">BOOT…</div>
+<div id="hud"></div>
 <canvas id="c"></canvas>
 
 <script>
-const log = m=>{
-  document.getElementById("log").textContent += "\n"+m;
+/* ===============================
+   🌍 INLINE REAL DATA SNAPSHOT
+   (оновлюється GitHub Actions)
+================================ */
+const DATA = {
+  time: "2026-01-11T00:00Z",
+  dst: -42,
+  ae: 380,
+  al: -520,
+  au: 140,
+  stations: [
+    {name:"TRO", lat:69.7, lon:18.9, dB:120},
+    {name:"ABK", lat:68.4, lon:18.8, dB:90},
+    {name:"OTT", lat:45.4, lon:-75.7, dB:40},
+    {name:"HON", lat:21.3, lon:-157.8, dB:30}
+  ]
 };
 
-log("JS OK");
-
+/* ===============================
+   ⚙️ CANVAS SETUP
+================================ */
 const c = document.getElementById("c");
 const ctx = c.getContext("2d");
-
 function resize(){
-  c.width = innerWidth;
-  c.height = innerHeight;
+  c.width=innerWidth;
+  c.height=innerHeight;
 }
-resize();
-addEventListener("resize",resize);
+resize(); addEventListener("resize",resize);
 
-ctx.fillStyle="#0ff";
-ctx.beginPath();
-ctx.arc(c.width/2,c.height/2,80,0,Math.PI*2);
-ctx.fill();
-log("CANVAS OK");
+/* ===============================
+   🧮 3×3 STATE MATRIX
+================================ */
+function stateMatrix(d){
+  return [
+    [ Math.abs(d.dst)/100, d.ae/1000, d.au/500 ],
+    [ d.ae/1000, Math.abs(d.al)/1000, d.dst/100 ],
+    [ d.au/500, d.dst/100, Math.abs(d.al)/1000 ]
+  ];
+}
 
-// ===== DATA LOAD =====
-fetch("./data/dst.json")
-.then(r=>{
-  log("FETCH STATUS "+r.status);
-  if(!r.ok) throw "HTTP "+r.status;
-  return r.json();
-})
-.then(d=>{
-  log("JSON OK");
-  log(JSON.stringify(d,null,2));
+function eigenTrace(M){
+  return M[0][0]+M[1][1]+M[2][2];
+}
 
-  // visualize dst
+/* ===============================
+   🚨 ALERT LOGIC
+================================ */
+function stabilityLevel(dst){
+  if(dst > -30) return "green";
+  if(dst > -80) return "yellow";
+  return "red";
+}
+
+/* ===============================
+   🌌 VISUALIZATION
+================================ */
+let t=0;
+function draw(){
+  t+=0.01;
   ctx.clearRect(0,0,c.width,c.height);
-  const dst = d.dst ?? -20;
-  const radius = Math.max(20,Math.abs(dst)*2);
 
-  ctx.strokeStyle="red";
-  ctx.lineWidth=4;
-  ctx.beginPath();
-  ctx.arc(c.width/2,c.height/2,radius,0,Math.PI*2);
-  ctx.stroke();
+  const cx=c.width/2, cy=c.height/2;
+  const base=Math.abs(DATA.dst)*2;
 
-})
-.catch(e=>{
-  log("LOAD ERROR");
-  log(String(e));
-});
+  // global field
+  for(let i=0;i<8;i++){
+    const r = base + Math.sin(t+i)*40;
+    ctx.strokeStyle="rgba(255,0,0,0.3)";
+    ctx.lineWidth=2;
+    ctx.beginPath();
+    ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.stroke();
+  }
+
+  // substorms
+  DATA.stations.forEach((s,i)=>{
+    const x=cx + Math.cos(t+i)*200;
+    const y=cy + Math.sin(t+i)*200;
+    ctx.strokeStyle="rgba(0,200,255,0.6)";
+    ctx.beginPath();
+    ctx.arc(x,y,s.dB/2,0,Math.PI*2);
+    ctx.stroke();
+  });
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+/* ===============================
+   🧭 HUD
+================================ */
+const M = stateMatrix(DATA);
+const trace = eigenTrace(M);
+const level = stabilityLevel(DATA.dst);
+
+document.getElementById("hud").innerHTML = `
+<b>MAGNETOSPHERE STATUS</b><br>
+time: ${DATA.time}<br><br>
+
+DST: ${DATA.dst} nT<br>
+AE: ${DATA.ae}<br>
+AL: ${DATA.al}<br>
+AU: ${DATA.au}<br><br>
+
+Matrix trace: ${trace.toFixed(2)}<br>
+Stability:
+<span class="alert-${level}">
+${level.toUpperCase()}
+</span>
+`;
 </script>
 
 </body>
