@@ -1,7 +1,5 @@
 [
-  {"name":"GUA","lat":-23.0,"lon":-43.3},
-  {"name":"KAK","lat":56.4,"lon":-94.2},
-  {"name":"HON","lat":21.3,"lon":-157.8},
-  {"name":"BJN","lat":40.0,"lon":116.2},
-  {"name":"FRD","lat":38.5,"lon":-77.5}
+  {"code":"ABK","lat":68.4,"lon":18.8},
+  {"code":"FRD","lat":38.2,"lon":-77.4},
+  {"code":"HON","lat":21.3,"lon":-157.8}
 ]
