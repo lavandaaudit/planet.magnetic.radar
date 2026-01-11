@@ -1,65 +1,21 @@
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-<meta charset="UTF-8">
-<title>MAGNETOSPHERE · DEBUG</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
-html,body{margin:0;background:#000;color:#9fdcff;font-family:monospace}
-canvas{display:block}
-#info{position:fixed;left:10px;top:10px}
-</style>
-</head>
-<body>
-
-<canvas id="c"></canvas>
-<div id="info">loading…</div>
-
 <script>
-const c=document.getElementById("c");
-const ctx=c.getContext("2d");
-function resize(){c.width=innerWidth;c.height=innerHeight}
-resize();window.onresize=resize;
-
-let dst=0,ae=0,kp=0,stations=[];
-
-async function load(){
-  try{
-    dst=(await fetch("data/dst.json").then(r=>r.json())).value;
-    ae=(await fetch("data/ae.json").then(r=>r.json())).value;
-    kp=(await fetch("data/kp.json").then(r=>r.json())).value;
-    stations=await fetch("data/stations.json").then(r=>r.json());
-    document.getElementById("info").textContent="DATA OK";
-  }catch(e){
-    document.getElementById("info").textContent="LOAD ERROR";
-    console.error(e);
-  }
-}
-
-function draw(){
-  ctx.clearRect(0,0,c.width,c.height);
-
-  const cx=c.width/2, cy=c.height/2, r=200;
-
-  ctx.strokeStyle="#1f5e7a";
-  ctx.beginPath();
-  ctx.arc(cx,cy,r,0,6.28);
-  ctx.stroke();
-
-  stations.forEach(s=>{
-    const x=cx+r*Math.cos(s.lon*Math.PI/180);
-    const y=cy-r*Math.sin(s.lat*Math.PI/180);
-    ctx.fillStyle="#4fc3ff";
-    ctx.beginPath();ctx.arc(x,y,3,0,6.28);ctx.fill();
-    ctx.fillText(s.code,x+5,y);
+fetch("./data/dst.json")
+  .then(r => {
+    if(!r.ok) throw "HTTP "+r.status;
+    return r.json();
+  })
+  .then(d => {
+    console.log("DST DATA:", d);
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      "<pre>"+JSON.stringify(d,null,2)+"</pre>"
+    );
+  })
+  .catch(e=>{
+    console.error("LOAD ERROR",e);
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      "<h2 style='color:red'>LOAD ERROR</h2>"
+    );
   });
-
-  ctx.fillText(`Dst ${dst} | AE ${ae} | Kp ${kp}`,10,c.height-20);
-
-  requestAnimationFrame(draw);
-}
-
-load().then(draw);
 </script>
-</body>
-</html>
