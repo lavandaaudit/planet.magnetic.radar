@@ -2,27 +2,25 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
-<title>MAGNETOSPHERE · STABILITY RADAR</title>
+<title>MAGNETOSPHERE · GLOBAL STABILITY</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 html,body{
   margin:0;
   background:#000;
-  color:#8fd3ff;
+  color:#9fdcff;
   font-family:Inter,system-ui,monospace;
 }
 canvas{display:block}
 #panel{
   position:fixed;
   left:10px; top:10px;
-  background:rgba(0,0,0,.6);
+  background:rgba(0,0,0,.65);
   padding:12px;
-  border:1px solid #1c3f55;
+  border:1px solid #244b63;
 }
-.alert{
-  color:#ff5c5c;
-  font-weight:bold;
-}
+.alert{color:#ff6464;font-weight:bold}
+.lambda{font-size:12px}
 </style>
 </head>
 <body>
@@ -30,67 +28,60 @@ canvas{display:block}
 <canvas id="c"></canvas>
 
 <div id="panel">
-  <div>Dst: <span id="dst">–</span></div>
-  <div>AE: <span id="ae">–</span></div>
-  <div>Kp: <span id="kp">–</span></div>
-  <div id="state">state: loading</div>
+  <div>Dst: <span id="dst"></span></div>
+  <div>AE: <span id="ae"></span></div>
+  <div>Kp: <span id="kp"></span></div>
+  <div class="lambda">λ: <span id="lambda"></span></div>
+  <div id="state"></div>
 </div>
 
 <script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-resize();
-window.onresize = resize;
+const c = document.getElementById("c");
+const ctx = c.getContext("2d");
+resize(); window.onresize=resize;
+function resize(){c.width=innerWidth;c.height=innerHeight}
 
-let data = {};
+let data={}, t=0;
 
-async function loadJSON(){
-  const files = ["dst","ae","kp","stations"];
-  for(const f of files){
-    data[f] = await fetch(`data/${f}.json`).then(r=>r.json());
+async function load(){
+  for(const f of ["dst","ae","kp","stations"]){
+    data[f]=await fetch(`data/${f}.json`).then(r=>r.json());
   }
 }
-function resize(){
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-}
 
-function drawEarth(){
-  const r = Math.min(canvas.width,canvas.height)*0.25;
-  ctx.strokeStyle="#1f6b8a";
+function earth(){
+  const r=Math.min(c.width,c.height)*0.28;
+  ctx.strokeStyle="#1f5e7a";
   ctx.lineWidth=2;
   ctx.beginPath();
-  ctx.arc(canvas.width/2,canvas.height/2,r,0,Math.PI*2);
+  ctx.arc(c.width/2,c.height/2,r,0,Math.PI*2);
   ctx.stroke();
+  return r;
 }
 
-function drawStations(){
-  const r = Math.min(canvas.width,canvas.height)*0.25;
-  data.stations.forEach(s=>{
-    const x = canvas.width/2 + r*Math.cos(s.lon*Math.PI/180);
-    const y = canvas.height/2 - r*Math.sin(s.lat*Math.PI/180);
-    ctx.fillStyle="#4fc3ff";
+function heatmap(r,ae,dst){
+  for(let lat=-90;lat<=90;lat+=5){
+    const intensity=Math.min(1,(Math.abs(ae)+Math.abs(dst))/2000);
+    ctx.strokeStyle=`rgba(255,80,80,${intensity})`;
     ctx.beginPath();
-    ctx.arc(x,y,2,0,Math.PI*2);
-    ctx.fill();
-  });
-}
-
-let t=0;
-function drawSubstorms(level){
-  const cx=canvas.width/2, cy=canvas.height/2;
-  for(let i=0;i<6;i++){
-    ctx.strokeStyle=`rgba(255,80,80,${level})`;
-    ctx.beginPath();
-    for(let a=0;a<Math.PI*2;a+=0.2){
-      const r=120+20*Math.sin(a*3+t+i);
-      ctx.lineTo(cx+r*Math.cos(a),cy+r*Math.sin(a));
-    }
+    const y=c.height/2 - r*Math.sin(lat*Math.PI/180);
+    ctx.moveTo(c.width/2-r,y);
+    ctx.lineTo(c.width/2+r,y);
     ctx.stroke();
   }
 }
 
-function stabilityMatrix(dst,ae,kp){
+function stations(r){
+  data.stations.forEach(s=>{
+    const x=c.width/2+r*Math.cos(s.lon*Math.PI/180);
+    const y=c.height/2-r*Math.sin(s.lat*Math.PI/180);
+    ctx.fillStyle="#4fc3ff";
+    ctx.beginPath();ctx.arc(x,y,2,0,6.28);ctx.fill();
+    ctx.fillText(s.code||"",x+4,y-4);
+  });
+}
+
+function matrix(dst,ae,kp){
   return [
     [1, kp/9, ae/2000],
     [kp/9, 1, dst/-300],
@@ -98,40 +89,59 @@ function stabilityMatrix(dst,ae,kp){
   ];
 }
 
-function spectrum(m){
-  return m.flat().reduce((a,b)=>a+Math.abs(b),0)/9;
+function eigenApprox(m){
+  const trace=m[0][0]+m[1][1]+m[2][2];
+  const det=m[0][0]*m[1][1]*m[2][2];
+  return [
+    (trace/3 + det/3).toFixed(2),
+    (trace/3).toFixed(2),
+    (trace/3 - det/3).toFixed(2)
+  ];
 }
 
-function render(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawEarth();
-  drawStations();
-
-  const dst = data.dst.value;
-  const ae  = data.ae.value;
-  const kp  = data.kp.value;
-
-  document.getElementById("dst").textContent = dst;
-  document.getElementById("ae").textContent  = ae;
-  document.getElementById("kp").textContent  = kp;
-
-  const M = stabilityMatrix(dst,ae,kp);
-  const S = spectrum(M);
-
-  drawSubstorms(Math.min(1,S/2));
-
-  const state = document.getElementById("state");
-  if(S>1.2){
-    state.innerHTML = "<span class='alert'>UNSTABLE</span>";
-  } else {
-    state.textContent = "stable";
+function substorms(level){
+  const cx=c.width/2,cy=c.height/2;
+  for(let i=0;i<5;i++){
+    ctx.strokeStyle=`rgba(255,120,120,${level})`;
+    ctx.beginPath();
+    for(let a=0;a<6.28;a+=0.2){
+      const r=120+20*Math.sin(a*3+t+i);
+      ctx.lineTo(cx+r*Math.cos(a+t/2),cy+r*Math.sin(a+t/2));
+    }
+    ctx.stroke();
   }
+}
+
+function loop(){
+  ctx.clearRect(0,0,c.width,c.height);
+
+  const r=earth();
+  const dst=data.dst.value, ae=data.ae.value, kp=data.kp.value;
+
+  heatmap(r,ae,dst);
+  stations(r);
+
+  const M=matrix(dst,ae,kp);
+  const λ=eigenApprox(M);
+  document.getElementById("lambda").textContent=λ.join(", ");
+
+  const instability=Math.max(...λ.map(Number));
+  substorms(Math.min(1,instability/1.2));
+
+  document.getElementById("dst").textContent=dst;
+  document.getElementById("ae").textContent=ae;
+  document.getElementById("kp").textContent=kp;
+
+  const state=document.getElementById("state");
+  state.innerHTML = instability>1
+    ? "<span class='alert'>GLOBAL INSTABILITY</span>"
+    : "stable";
 
   t+=0.01;
-  requestAnimationFrame(render);
+  requestAnimationFrame(loop);
 }
 
-loadJSON().then(render);
+load().then(loop);
 </script>
 </body>
 </html>
